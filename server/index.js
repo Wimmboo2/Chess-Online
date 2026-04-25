@@ -129,13 +129,6 @@ function checkGameEnd(room, roomId) {
     return true;
   }
 
-  if (chess.isDraw()) {
-    room.gameOver = true;
-    stopTimer(room);
-    io.to(roomId).emit("gameOver", { winner: null, reason: "draw" });
-    return true;
-  }
-
   if (chess.isThreefoldRepetition()) {
     room.gameOver = true;
     stopTimer(room);
@@ -153,6 +146,14 @@ function checkGameEnd(room, roomId) {
       winner: null,
       reason: "insufficient material",
     });
+    return true;
+  }
+
+  if (chess.isDraw()) {
+    // If not stalemate, repetition, or insufficient material, it must be the 50-move rule
+    room.gameOver = true;
+    stopTimer(room);
+    io.to(roomId).emit("gameOver", { winner: null, reason: "50-move rule" });
     return true;
   }
 
@@ -286,6 +287,39 @@ io.on("connection", (socket) => {
     const winner = playerColor === "w" ? "b" : "w";
     io.to(code).emit("gameOver", { winner, reason: "resignation" });
     console.log(`Room ${code} — ${playerColor} resigned`);
+  });
+
+  // ── Draw Offer ──
+  socket.on("offerDraw", ({ roomId }) => {
+    const code = roomId?.toUpperCase();
+    const room = rooms.get(code);
+
+    if (!room || room.gameOver) return;
+
+    const opponentId = getOpponentSocket(room, socket.id);
+    if (opponentId) {
+      io.to(opponentId).emit("drawOffered");
+    }
+  });
+
+  // ── Draw Response ──
+  socket.on("respondDraw", ({ roomId, accept }) => {
+    const code = roomId?.toUpperCase();
+    const room = rooms.get(code);
+
+    if (!room || room.gameOver) return;
+
+    if (accept) {
+      room.gameOver = true;
+      stopTimer(room);
+      io.to(code).emit("gameOver", { winner: null, reason: "draw agreement" });
+      console.log(`Room ${code} — Draw agreed`);
+    } else {
+      const opponentId = getOpponentSocket(room, socket.id);
+      if (opponentId) {
+        io.to(opponentId).emit("drawDeclined");
+      }
+    }
   });
 
   // ── Rematch Request ──

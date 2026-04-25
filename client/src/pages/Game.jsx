@@ -38,6 +38,9 @@ export default function Game() {
   const [rematchRequested, setRematchRequested] = useState(false);
   const [rematchPending, setRematchPending] = useState(false);
   const [opponentDisconnected, setOpponentDisconnected] = useState(false);
+  const [drawOfferPending, setDrawOfferPending] = useState(false);
+  const [incomingDrawOffer, setIncomingDrawOffer] = useState(false);
+  const [drawDeclinedMsg, setDrawDeclinedMsg] = useState(false);
 
   const gameRef = useRef(game);
   gameRef.current = game;
@@ -58,6 +61,9 @@ export default function Game() {
       setRematchRequested(false);
       setRematchPending(false);
       setOpponentDisconnected(false);
+      setDrawOfferPending(false);
+      setIncomingDrawOffer(false);
+      setDrawDeclinedMsg(false);
     };
 
     const handleMoveMade = ({ from, to, fen, moves: allMoves }) => {
@@ -88,6 +94,16 @@ export default function Game() {
       setOpponentDisconnected(true);
     };
 
+    const handleDrawOffered = () => {
+      setIncomingDrawOffer(true);
+    };
+
+    const handleDrawDeclined = () => {
+      setDrawOfferPending(false);
+      setDrawDeclinedMsg(true);
+      setTimeout(() => setDrawDeclinedMsg(false), 3000);
+    };
+
     const handleError = ({ message }) => {
       console.error('Socket error:', message);
     };
@@ -99,6 +115,8 @@ export default function Game() {
     socket.on('rematchPending', handleRematchPending);
     socket.on('rematchRequested', handleRematchRequested);
     socket.on('opponentDisconnected', handleOpponentDisconnected);
+    socket.on('drawOffered', handleDrawOffered);
+    socket.on('drawDeclined', handleDrawDeclined);
     socket.on('error', handleError);
 
     return () => {
@@ -109,6 +127,8 @@ export default function Game() {
       socket.off('rematchPending', handleRematchPending);
       socket.off('rematchRequested', handleRematchRequested);
       socket.off('opponentDisconnected', handleOpponentDisconnected);
+      socket.off('drawOffered', handleDrawOffered);
+      socket.off('drawDeclined', handleDrawDeclined);
       socket.off('error', handleError);
     };
   }, []);
@@ -144,6 +164,17 @@ export default function Game() {
   // ── Resign handler ──
   const onResign = useCallback(() => {
     socket.emit('resign', { roomId });
+  }, [roomId]);
+
+  // ── Draw Offer handler ──
+  const onOfferDraw = useCallback(() => {
+    socket.emit('offerDraw', { roomId });
+    setDrawOfferPending(true);
+  }, [roomId]);
+
+  const onRespondDraw = useCallback((accept) => {
+    socket.emit('respondDraw', { roomId, accept });
+    setIncomingDrawOffer(false);
   }, [roomId]);
 
   // ── Rematch handler ──
@@ -236,9 +267,43 @@ export default function Game() {
         <MoveHistory moves={moves} />
 
         <div className="game-controls">
+          <button
+            className="btn-secondary"
+            onClick={onOfferDraw}
+            disabled={!!gameOver || drawOfferPending || incomingDrawOffer}
+          >
+            {drawOfferPending ? 'Draw Offered...' : '🤝 Offer Draw'}
+          </button>
           <ResignButton onResign={onResign} disabled={!!gameOver} />
         </div>
       </div>
+
+      {/* Draw Offer Modal */}
+      {incomingDrawOffer && !gameOver && (
+        <div className="gameover-overlay">
+          <div className="gameover-modal">
+            <span className="gameover-icon">🤝</span>
+            <h2 className="gameover-title">Draw Offer</h2>
+            <p className="gameover-reason">
+              {opponentColor === 'w' ? 'White' : 'Black'} is offering a draw.
+            </p>
+            <div className="gameover-actions">
+              <button
+                className="btn-primary"
+                onClick={() => onRespondDraw(true)}
+              >
+                Accept Draw
+              </button>
+              <button
+                className="btn-secondary"
+                onClick={() => onRespondDraw(false)}
+              >
+                Decline
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Game Over Modal */}
       {gameOver && (
@@ -254,6 +319,7 @@ export default function Game() {
       )}
 
       {copied && <div className="copy-toast">Room code copied!</div>}
+      {drawDeclinedMsg && <div className="copy-toast">Draw offer declined.</div>}
     </div>
   );
 }

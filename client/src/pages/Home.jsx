@@ -105,6 +105,15 @@ export default function Home() {
           ✦ Create New Room
         </button>
 
+        <button
+          id="play-locally-btn"
+          className="btn-secondary"
+          onClick={() => navigate('/local', { state: { timeControl: selectedTime } })}
+          style={{ marginTop: '10px' }}
+        >
+          🤝 Play Locally (Pass & Play)
+        </button>
+
         <div className="home-divider">
           <span>or join a room</span>
         </div>
