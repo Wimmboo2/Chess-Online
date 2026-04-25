@@ -13,7 +13,21 @@ const PORT = process.env.PORT || 3001;
 
 const io = new Server(server, {
   cors: {
-    origin: CLIENT_URL,
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) return callback(null, true);
+      
+      // Allow localhost, the exact configured CLIENT_URL, and any vercel preview deployments
+      if (
+        origin === "http://localhost:5173" || 
+        origin === CLIENT_URL || 
+        origin.endsWith(".vercel.app")
+      ) {
+        return callback(null, true);
+      }
+      
+      callback(new Error("Not allowed by CORS"));
+    },
     methods: ["GET", "POST"],
   },
 });
