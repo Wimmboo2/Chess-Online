@@ -176,51 +176,70 @@ export default function ChessBoardComponent({ game, playerColor, onMove, lastMov
     }
   }, [boardOrientation]);
 
+  // Keep a ref to the latest drawing arrow to avoid rebinding global listeners on every drag tick
+  const drawingArrowRef = useRef(drawingArrow);
+  useEffect(() => {
+    drawingArrowRef.current = drawingArrow;
+  }, [drawingArrow]);
+
   useEffect(() => {
     const handleWindowMouseMove = (e) => {
-      if (drawingArrow) {
+      const current = drawingArrowRef.current;
+      if (current) {
         const sq = getSquareFromCoords(e.clientX, e.clientY);
-        if (sq && sq !== drawingArrow.end) {
+        if (sq && sq !== current.end) {
           setDrawingArrow((prev) => prev ? { ...prev, end: sq } : null);
         }
       }
     };
 
     const handleWindowMouseUp = (e) => {
-      if (e.button === 2 && drawingArrow) {
+      const current = drawingArrowRef.current;
+      if (!current) return;
+      
+      // Only finalize the shape if it's a right click release
+      if (e.button === 2) {
         const sq = getSquareFromCoords(e.clientX, e.clientY);
         if (sq) {
-          if (sq === drawingArrow.start) {
+          if (sq === current.start) {
             setRightClickedSquares((prev) => {
               const next = { ...prev };
               if (next[sq]) {
                 delete next[sq];
               } else {
-                const fillColor = drawingArrow.color.replace('0.8)', '0.5)');
+                const fillColor = current.color.replace('0.8)', '0.5)');
                 next[sq] = { backgroundColor: fillColor };
               }
               return next;
             });
           } else {
-            setCustomArrows((prev) => [...prev, [drawingArrow.start, sq, drawingArrow.color]]);
+            setCustomArrows((prev) => [...prev, [current.start, sq, current.color]]);
           }
         }
+      }
+      
+      // ALWAYS clear drawing state on ANY mouse up to prevent sticking
+      setDrawingArrow(null);
+    };
+
+    const handleGlobalContextMenu = () => {
+      if (drawingArrowRef.current) {
         setDrawingArrow(null);
       }
     };
 
-    if (drawingArrow) {
-      window.addEventListener('mousemove', handleWindowMouseMove);
-      window.addEventListener('mouseup', handleWindowMouseUp);
-    }
+    window.addEventListener('mousemove', handleWindowMouseMove);
+    window.addEventListener('mouseup', handleWindowMouseUp);
+    window.addEventListener('contextmenu', handleGlobalContextMenu);
     
     return () => {
       window.removeEventListener('mousemove', handleWindowMouseMove);
       window.removeEventListener('mouseup', handleWindowMouseUp);
+      window.removeEventListener('contextmenu', handleGlobalContextMenu);
     };
-  }, [drawingArrow, boardOrientation]);
+  }, [boardOrientation]); // Only rebind if orientation changes
 
-  // Prevent context menu anywhere on the board container
+  // Prevent context menu anywhere on the document while using the app
   useEffect(() => {
     const handleContextMenu = (e) => e.preventDefault();
     document.addEventListener('contextmenu', handleContextMenu);
