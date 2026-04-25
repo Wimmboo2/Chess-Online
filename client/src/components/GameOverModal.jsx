@@ -3,6 +3,7 @@ export default function GameOverModal({
   playerColor,
   onRematch,
   onGoHome,
+  onReviewGame,
   rematchRequested,
   rematchPending,
   opponentDisconnected,
@@ -72,6 +73,15 @@ export default function GameOverModal({
 
           {rematchPending && !rematchRequested && (
             <p className="rematch-status">Opponent wants a rematch!</p>
+          )}
+
+          {onReviewGame && (
+            <button
+              className="btn-secondary"
+              onClick={onReviewGame}
+            >
+              👁️ Review Game
+            </button>
           )}
 
           <button

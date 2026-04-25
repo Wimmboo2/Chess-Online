@@ -7,6 +7,7 @@ import Clock from '../components/Clock.jsx';
 import MoveHistory from '../components/MoveHistory.jsx';
 import GameOverModal from '../components/GameOverModal.jsx';
 import ResignButton from '../components/ResignButton.jsx';
+import { playMoveSound, playCaptureSound, playCheckSound, playGameStartSound, playGameOverSound, playDrawSound } from '../utils/sounds.js';
 
 export default function Game() {
   const { roomId } = useParams();
@@ -60,10 +61,10 @@ export default function Game() {
       setLastMove(null);
       setRematchRequested(false);
       setRematchPending(false);
-      setOpponentDisconnected(false);
       setDrawOfferPending(false);
       setIncomingDrawOffer(false);
       setDrawDeclinedMsg(false);
+      playGameStartSound();
     };
 
     const handleMoveMade = ({ from, to, fen, moves: allMoves }) => {
@@ -72,6 +73,17 @@ export default function Game() {
       setGame(newGame);
       setMoves(allMoves);
       setLastMove({ from, to });
+
+      const lastSan = allMoves[allMoves.length - 1];
+      if (lastSan) {
+        if (lastSan.includes('+') || lastSan.includes('#')) {
+          playCheckSound();
+        } else if (lastSan.includes('x')) {
+          playCaptureSound();
+        } else {
+          playMoveSound();
+        }
+      }
     };
 
     const handleTimerUpdate = ({ w, b }) => {
@@ -80,6 +92,11 @@ export default function Game() {
 
     const handleGameOver = ({ winner, reason }) => {
       setGameOver({ winner, reason });
+      if (reason.includes('draw') || reason.includes('stalemate') || reason.includes('repetition') || reason.includes('material') || reason.includes('rule')) {
+        playDrawSound();
+      } else {
+        playGameOverSound();
+      }
     };
 
     const handleRematchPending = () => {
@@ -187,6 +204,16 @@ export default function Game() {
   const onGoHome = useCallback(() => {
     navigate('/');
   }, [navigate]);
+
+  const onReviewGame = useCallback(() => {
+    navigate('/review', { 
+      state: { 
+        moves, 
+        playerColor, 
+        opponentName: 'Opponent'
+      } 
+    });
+  }, [navigate, moves, playerColor]);
 
   // ── Copy room code ──
   const copyRoomCode = () => {
@@ -312,6 +339,7 @@ export default function Game() {
           playerColor={playerColor}
           onRematch={onRematch}
           onGoHome={onGoHome}
+          onReviewGame={onReviewGame}
           rematchRequested={rematchRequested}
           rematchPending={rematchPending}
           opponentDisconnected={opponentDisconnected}

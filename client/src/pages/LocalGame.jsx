@@ -6,6 +6,7 @@ import Clock from '../components/Clock.jsx';
 import MoveHistory from '../components/MoveHistory.jsx';
 import GameOverModal from '../components/GameOverModal.jsx';
 import ResignButton from '../components/ResignButton.jsx';
+import { playMoveSound, playCaptureSound, playCheckSound, playGameOverSound, playDrawSound } from '../utils/sounds.js';
 
 export default function LocalGame() {
   const navigate = useNavigate();
@@ -68,6 +69,7 @@ export default function LocalGame() {
             winner: activeColor === 'w' ? 'b' : 'w',
             reason: 'timeout',
           });
+          playGameOverSound();
           clearInterval(timerIntervalRef.current);
         }
         return newTimers;
@@ -98,6 +100,14 @@ export default function LocalGame() {
       setMoves((prev) => [...prev, move.san]);
       setLastMove({ from, to });
       
+      if (move.san.includes('+') || move.san.includes('#')) {
+        playCheckSound();
+      } else if (move.flags.includes('c') || move.san.includes('x')) {
+        playCaptureSound();
+      } else {
+        playMoveSound();
+      }
+      
       const newActiveColor = gameCopy.turn();
       setActiveColor(newActiveColor);
       lastTickRef.current = Date.now(); // reset tick for accurate timing
@@ -105,6 +115,11 @@ export default function LocalGame() {
       const endState = checkGameEnd(gameCopy, activeColor);
       if (endState) {
         setGameOver(endState);
+        if (endState.reason.includes('draw') || endState.reason.includes('stalemate') || endState.reason.includes('repetition') || endState.reason.includes('material') || endState.reason.includes('rule')) {
+          playDrawSound();
+        } else {
+          playGameOverSound();
+        }
       }
 
       return true;
@@ -117,6 +132,7 @@ export default function LocalGame() {
       winner: activeColor === 'w' ? 'b' : 'w',
       reason: 'resignation',
     });
+    playGameOverSound();
   }, [activeColor]);
 
   const onRematch = useCallback(() => {
@@ -132,6 +148,16 @@ export default function LocalGame() {
   const onGoHome = useCallback(() => {
     navigate('/');
   }, [navigate]);
+
+  const onReviewGame = useCallback(() => {
+    navigate('/review', { 
+      state: { 
+        moves, 
+        playerColor: 'w', 
+        opponentName: 'Local Player'
+      } 
+    });
+  }, [navigate, moves]);
 
   const boardOrientation = activeColor === 'b' ? 'black' : 'white';
   const opponentColor = activeColor === 'w' ? 'b' : 'w';
@@ -179,6 +205,7 @@ export default function LocalGame() {
           playerColor={activeColor} // Relative to the active player who just lost/won/drew
           onRematch={onRematch}
           onGoHome={onGoHome}
+          onReviewGame={onReviewGame}
           rematchRequested={false}
           rematchPending={false}
           opponentDisconnected={false}

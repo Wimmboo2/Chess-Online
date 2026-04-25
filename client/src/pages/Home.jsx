@@ -13,6 +13,9 @@ export default function Home() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [selectedTime, setSelectedTime] = useState(600000);
+  const [botMenuOpen, setBotMenuOpen] = useState(false);
+  const [botColor, setBotColor] = useState('w'); // user color
+  const [botDifficulty, setBotDifficulty] = useState('easy');
   const navigate = useNavigate();
 
   const handleCreateRoom = () => {
@@ -114,6 +117,15 @@ export default function Home() {
           🤝 Play Locally (Pass & Play)
         </button>
 
+        <button
+          id="play-bot-btn"
+          className="btn-secondary"
+          onClick={() => setBotMenuOpen(true)}
+          style={{ marginTop: '10px', background: 'var(--bg-glass)' }}
+        >
+          🤖 Play vs Computer
+        </button>
+
         <div className="home-divider">
           <span>or join a room</span>
         </div>
@@ -142,6 +154,64 @@ export default function Home() {
 
         {error && <div className="error-msg">{error}</div>}
       </div>
+
+      {/* Bot Setup Modal */}
+      {botMenuOpen && (
+        <div className="gameover-overlay">
+          <div className="gameover-modal" style={{ textAlign: 'center' }}>
+            <h2 className="gameover-title">Play vs Computer</h2>
+            
+            <div style={{ margin: '20px 0' }}>
+              <p style={{ marginBottom: '8px', fontWeight: 'bold' }}>Choose Your Color:</p>
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'center' }}>
+                <button 
+                  className={`btn-secondary ${botColor === 'w' ? 'selected' : ''}`}
+                  onClick={() => setBotColor('w')}
+                  style={{ background: botColor === 'w' ? 'var(--accent-gold)' : '' }}
+                >
+                  White
+                </button>
+                <button 
+                  className={`btn-secondary ${botColor === 'b' ? 'selected' : ''}`}
+                  onClick={() => setBotColor('b')}
+                  style={{ background: botColor === 'b' ? 'var(--accent-gold)' : '' }}
+                >
+                  Black
+                </button>
+              </div>
+            </div>
+
+            <div style={{ margin: '20px 0' }}>
+              <p style={{ marginBottom: '8px', fontWeight: 'bold' }}>Difficulty:</p>
+              <select 
+                className="input-field" 
+                value={botDifficulty} 
+                onChange={(e) => setBotDifficulty(e.target.value)}
+                style={{ width: '100%', marginBottom: '10px' }}
+              >
+                <option value="easy">Easy (Depth 2)</option>
+                <option value="medium">Medium (Depth 8)</option>
+                <option value="hard">Hard (Depth 15)</option>
+              </select>
+            </div>
+
+            <div className="gameover-actions">
+              <button
+                className="btn-primary"
+                onClick={() => navigate('/computer', { state: { playerColor: botColor, difficulty: botDifficulty, timeControl: selectedTime } })}
+              >
+                Start Game
+              </button>
+              <button
+                className="btn-secondary"
+                onClick={() => setBotMenuOpen(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

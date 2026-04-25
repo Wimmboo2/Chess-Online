@@ -159,7 +159,7 @@ export default function ChessBoardComponent({ game, playerColor, onMove, lastMov
     };
   };
 
-  const handleMouseDown = (e) => {
+  const handleMouseDown = useCallback((e) => {
     if (e.button === 2) {
       setPremove(null);
       const sq = getSquareFromCoords(e.clientX, e.clientY);
@@ -174,39 +174,51 @@ export default function ChessBoardComponent({ game, playerColor, onMove, lastMov
       setCustomArrows([]);
       setRightClickedSquares({});
     }
-  };
+  }, [boardOrientation]);
 
-  const handleMouseMove = (e) => {
-    if (drawingArrow) {
-      const sq = getSquareFromCoords(e.clientX, e.clientY);
-      if (sq && sq !== drawingArrow.end) {
-        setDrawingArrow((prev) => ({ ...prev, end: sq }));
-      }
-    }
-  };
-
-  const handleMouseUp = (e) => {
-    if (e.button === 2 && drawingArrow) {
-      const sq = getSquareFromCoords(e.clientX, e.clientY);
-      if (sq) {
-        if (sq === drawingArrow.start) {
-          setRightClickedSquares((prev) => {
-            const next = { ...prev };
-            if (next[sq]) {
-              delete next[sq];
-            } else {
-              const fillColor = drawingArrow.color.replace('0.8)', '0.5)');
-              next[sq] = { backgroundColor: fillColor };
-            }
-            return next;
-          });
-        } else {
-          setCustomArrows((prev) => [...prev, [drawingArrow.start, sq, drawingArrow.color]]);
+  useEffect(() => {
+    const handleWindowMouseMove = (e) => {
+      if (drawingArrow) {
+        const sq = getSquareFromCoords(e.clientX, e.clientY);
+        if (sq && sq !== drawingArrow.end) {
+          setDrawingArrow((prev) => prev ? { ...prev, end: sq } : null);
         }
       }
-      setDrawingArrow(null);
+    };
+
+    const handleWindowMouseUp = (e) => {
+      if (e.button === 2 && drawingArrow) {
+        const sq = getSquareFromCoords(e.clientX, e.clientY);
+        if (sq) {
+          if (sq === drawingArrow.start) {
+            setRightClickedSquares((prev) => {
+              const next = { ...prev };
+              if (next[sq]) {
+                delete next[sq];
+              } else {
+                const fillColor = drawingArrow.color.replace('0.8)', '0.5)');
+                next[sq] = { backgroundColor: fillColor };
+              }
+              return next;
+            });
+          } else {
+            setCustomArrows((prev) => [...prev, [drawingArrow.start, sq, drawingArrow.color]]);
+          }
+        }
+        setDrawingArrow(null);
+      }
+    };
+
+    if (drawingArrow) {
+      window.addEventListener('mousemove', handleWindowMouseMove);
+      window.addEventListener('mouseup', handleWindowMouseUp);
     }
-  };
+    
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMouseMove);
+      window.removeEventListener('mouseup', handleWindowMouseUp);
+    };
+  }, [drawingArrow, boardOrientation]);
 
   // Prevent context menu anywhere on the board container
   useEffect(() => {
@@ -274,9 +286,6 @@ export default function ChessBoardComponent({ game, playerColor, onMove, lastMov
     <div 
       ref={boardRef}
       onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp} // Stop drawing if mouse leaves board
       style={{ width: '100%', maxWidth: '640px', aspectRatio: '1', position: 'relative' }}
     >
       <Chessboard
