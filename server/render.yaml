@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: chess-online-server
+    runtime: node
+    buildCommand: npm install
+    startCommand: node index.js
+    envVars:
+      - key: CLIENT_URL
+        value: https://your-app.vercel.app
+      - key: PORT
+        value: 3001
