@@ -366,7 +366,7 @@ app.get("/", (req, res) => {
   res.json({ status: "Chess server running", rooms: rooms.size });
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, "0.0.0.0", () => {
   console.log(`♟ Chess server listening on port ${PORT}`);
   console.log(`  Accepting connections from: ${CLIENT_URL}`);
 });
