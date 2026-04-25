@@ -12,8 +12,8 @@ export default function ChessBoardComponent({ game, playerColor, onMove, lastMov
 
   // State for Custom Annotations
   const [rightClickedSquares, setRightClickedSquares] = useState({});
-  const [customArrows, setCustomArrows] = useState([]);
-  const [drawingArrow, setDrawingArrow] = useState(null); // { start, color }
+  const [customArrows, setCustomArrows] = useState([]); // [ [start, end, color] ]
+  const [drawingArrow, setDrawingArrow] = useState(null); // { start, end, color }
 
   const boardRef = useRef(null);
 
@@ -31,11 +31,8 @@ export default function ChessBoardComponent({ game, playerColor, onMove, lastMov
     }
 
     if (move) {
-      // Execute the premove
       onMove(premove.from, premove.to);
     }
-
-    // Always clear the premove once our turn starts
     setPremove(null);
   }, [game, playerColor, gameOver, premove, onMove]);
 
@@ -62,7 +59,6 @@ export default function ChessBoardComponent({ game, playerColor, onMove, lastMov
   const onSquareClick = (square) => {
     if (gameOver) return;
 
-    // Premove Logic (Opponent's turn)
     if (game.turn() !== playerColor && playerColor) {
       if (selectedSquare) {
         if (selectedSquare !== square) {
@@ -80,7 +76,6 @@ export default function ChessBoardComponent({ game, playerColor, onMove, lastMov
       return;
     }
 
-    // Normal Move Logic (Our turn)
     if (selectedSquare) {
       const moves = game.moves({ square: selectedSquare, verbose: true });
       const move = moves.find((m) => m.to === square);
@@ -92,18 +87,15 @@ export default function ChessBoardComponent({ game, playerColor, onMove, lastMov
         return;
       }
 
-      // If we clicked a different piece of ours, switch selection
       const piece = game.get(square);
       if (piece && piece.color === game.turn() && piece.color === playerColor) {
         selectPiece(square);
         return;
       }
 
-      // Clicked empty/invalid square -> clear selection
       setSelectedSquare(null);
       setOptionSquares({});
     } else {
-      // Nothing selected yet -> select piece
       const piece = game.get(square);
       if (piece && piece.color === game.turn() && piece.color === playerColor) {
         selectPiece(square);
@@ -114,14 +106,12 @@ export default function ChessBoardComponent({ game, playerColor, onMove, lastMov
   const onDrop = (sourceSquare, targetSquare) => {
     if (gameOver) return false;
 
-    // Normal move
     if (game.turn() === playerColor) {
       setSelectedSquare(null);
       setOptionSquares({});
       return onMove(sourceSquare, targetSquare);
     }
 
-    // Premove drag
     if (game.turn() !== playerColor && playerColor) {
       const piece = game.get(sourceSquare);
       if (piece && piece.color === playerColor) {
@@ -129,7 +119,7 @@ export default function ChessBoardComponent({ game, playerColor, onMove, lastMov
         setSelectedSquare(null);
         setOptionSquares({});
       }
-      return false; // Return false so the piece visually snaps back, but the premove is registered
+      return false; 
     }
 
     return false;
@@ -140,7 +130,6 @@ export default function ChessBoardComponent({ game, playerColor, onMove, lastMov
     if (!boardRef.current) return null;
     const rect = boardRef.current.getBoundingClientRect();
     
-    // Bounds check
     if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) return null;
 
     const size = rect.width / 8;
@@ -156,22 +145,43 @@ export default function ChessBoardComponent({ game, playerColor, onMove, lastMov
     return `${file}${rank}`;
   };
 
+  const getSquareCenter = (sq) => {
+    if (!sq) return { x: 0, y: 0 };
+    const fileIndex = sq.charCodeAt(0) - 97;
+    const rankIndex = parseInt(sq[1], 10) - 1;
+
+    const col = boardOrientation === 'white' ? fileIndex : 7 - fileIndex;
+    const row = boardOrientation === 'white' ? 7 - rankIndex : rankIndex;
+
+    return {
+      x: col * 12.5 + 6.25,
+      y: row * 12.5 + 6.25,
+    };
+  };
+
   const handleMouseDown = (e) => {
     if (e.button === 2) {
-      // Right click -> start drawing
-      setPremove(null); // Cancel premove on right click
+      setPremove(null);
       const sq = getSquareFromCoords(e.clientX, e.clientY);
       if (sq) {
         let color = 'rgba(21, 120, 27, 0.8)'; // green
         if (e.shiftKey) color = 'rgba(235, 151, 78, 0.8)'; // yellow/orange
         if (e.altKey) color = 'rgba(200, 30, 30, 0.8)'; // red
         
-        setDrawingArrow({ start: sq, color });
+        setDrawingArrow({ start: sq, end: sq, color });
       }
     } else if (e.button === 0) {
-      // Left click -> clear annotations
       setCustomArrows([]);
       setRightClickedSquares({});
+    }
+  };
+
+  const handleMouseMove = (e) => {
+    if (drawingArrow) {
+      const sq = getSquareFromCoords(e.clientX, e.clientY);
+      if (sq && sq !== drawingArrow.end) {
+        setDrawingArrow((prev) => ({ ...prev, end: sq }));
+      }
     }
   };
 
@@ -180,20 +190,17 @@ export default function ChessBoardComponent({ game, playerColor, onMove, lastMov
       const sq = getSquareFromCoords(e.clientX, e.clientY);
       if (sq) {
         if (sq === drawingArrow.start) {
-          // Circle
           setRightClickedSquares((prev) => {
             const next = { ...prev };
             if (next[sq]) {
               delete next[sq];
             } else {
-              // Adjust opacity for the circle fill
               const fillColor = drawingArrow.color.replace('0.8)', '0.5)');
               next[sq] = { backgroundColor: fillColor };
             }
             return next;
           });
         } else {
-          // Arrow
           setCustomArrows((prev) => [...prev, [drawingArrow.start, sq, drawingArrow.color]]);
         }
       }
@@ -201,38 +208,39 @@ export default function ChessBoardComponent({ game, playerColor, onMove, lastMov
     }
   };
 
+  // Prevent context menu anywhere on the board container
+  useEffect(() => {
+    const handleContextMenu = (e) => e.preventDefault();
+    document.addEventListener('contextmenu', handleContextMenu);
+    return () => document.removeEventListener('contextmenu', handleContextMenu);
+  }, []);
+
   // ── Combined Styles ──
   const customSquareStyles = useMemo(() => {
     const styles = {};
 
-    // 1. Last move
     if (lastMove) {
       styles[lastMove.from] = { background: 'rgba(255, 255, 100, 0.35)' };
       styles[lastMove.to] = { background: 'rgba(255, 255, 100, 0.35)' };
     }
 
-    // 2. Selected square
     if (selectedSquare) {
       styles[selectedSquare] = { background: 'rgba(255, 255, 50, 0.5)' };
     }
 
-    // 3. Move options (dots/rings)
     Object.keys(optionSquares).forEach((sq) => {
       styles[sq] = { ...styles[sq], ...optionSquares[sq] };
     });
 
-    // 4. Premove
     if (premove) {
-      styles[premove.from] = { background: 'rgba(128, 0, 128, 0.4)' }; // purple
+      styles[premove.from] = { background: 'rgba(128, 0, 128, 0.4)' };
       styles[premove.to] = { background: 'rgba(128, 0, 128, 0.4)' };
     }
 
-    // 5. Right clicked squares (circles)
     Object.keys(rightClickedSquares).forEach((sq) => {
       styles[sq] = { ...styles[sq], ...rightClickedSquares[sq] };
     });
 
-    // 6. King in check
     if (game.inCheck()) {
       const board = game.board();
       for (let r = 0; r < 8; r++) {
@@ -254,15 +262,21 @@ export default function ChessBoardComponent({ game, playerColor, onMove, lastMov
     return styles;
   }, [lastMove, game, selectedSquare, optionSquares, premove, rightClickedSquares]);
 
-  // Allow dragging even during opponent's turn for premoves
   const isDraggable = !gameOver;
+
+  const getMarkerId = (color) => {
+    if (color.includes('235, 151, 78')) return 'arrow-yellow';
+    if (color.includes('200, 30, 30')) return 'arrow-red';
+    return 'arrow-green';
+  };
 
   return (
     <div 
       ref={boardRef}
       onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
-      onContextMenu={(e) => e.preventDefault()}
+      onMouseLeave={handleMouseUp} // Stop drawing if mouse leaves board
       style={{ width: '100%', maxWidth: '640px', aspectRatio: '1', position: 'relative' }}
     >
       <Chessboard
@@ -273,8 +287,7 @@ export default function ChessBoardComponent({ game, playerColor, onMove, lastMov
         boardOrientation={boardOrientation}
         arePiecesDraggable={isDraggable}
         customSquareStyles={customSquareStyles}
-        customArrows={customArrows}
-        areArrowsAllowed={false} // We handle custom arrows manually via our own mouse events
+        areArrowsAllowed={false}
         customBoardStyle={{
           borderRadius: '8px',
           boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
@@ -283,6 +296,74 @@ export default function ChessBoardComponent({ game, playerColor, onMove, lastMov
         customLightSquareStyle={{ backgroundColor: '#f0d9b5' }}
         animationDuration={200}
       />
+
+      {/* Custom SVG Overlay for Multi-colored Arrows */}
+      <svg 
+        viewBox="0 0 100 100" 
+        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 10 }}
+      >
+        <defs>
+          <marker id="arrow-green" markerWidth="4" markerHeight="4" refX="2.5" refY="2" orient="auto" markerUnits="strokeWidth">
+            <polygon points="0 0, 4 2, 0 4" fill="rgba(21, 120, 27, 0.8)" />
+          </marker>
+          <marker id="arrow-yellow" markerWidth="4" markerHeight="4" refX="2.5" refY="2" orient="auto" markerUnits="strokeWidth">
+            <polygon points="0 0, 4 2, 0 4" fill="rgba(235, 151, 78, 0.8)" />
+          </marker>
+          <marker id="arrow-red" markerWidth="4" markerHeight="4" refX="2.5" refY="2" orient="auto" markerUnits="strokeWidth">
+            <polygon points="0 0, 4 2, 0 4" fill="rgba(200, 30, 30, 0.8)" />
+          </marker>
+        </defs>
+        
+        {customArrows.map((arrow, i) => {
+          const [start, end, color] = arrow;
+          const startPos = getSquareCenter(start);
+          const endPos = getSquareCenter(end);
+          
+          const dx = endPos.x - startPos.x;
+          const dy = endPos.y - startPos.y;
+          const length = Math.sqrt(dx * dx + dy * dy);
+          if (length === 0) return null;
+          const shorten = 3.5;
+          const ratio = Math.max(0, (length - shorten) / length);
+          
+          return (
+            <line
+              key={i}
+              x1={startPos.x}
+              y1={startPos.y}
+              x2={startPos.x + dx * ratio}
+              y2={startPos.y + dy * ratio}
+              stroke={color}
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              markerEnd={`url(#${getMarkerId(color)})`}
+            />
+          );
+        })}
+
+        {drawingArrow && drawingArrow.end && drawingArrow.start !== drawingArrow.end && (() => {
+          const startPos = getSquareCenter(drawingArrow.start);
+          const endPos = getSquareCenter(drawingArrow.end);
+          const dx = endPos.x - startPos.x;
+          const dy = endPos.y - startPos.y;
+          const length = Math.sqrt(dx * dx + dy * dy);
+          const shorten = 3.5;
+          const ratio = Math.max(0, (length - shorten) / length);
+          
+          return (
+            <line
+              x1={startPos.x}
+              y1={startPos.y}
+              x2={startPos.x + dx * ratio}
+              y2={startPos.y + dy * ratio}
+              stroke={drawingArrow.color}
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              markerEnd={`url(#${getMarkerId(drawingArrow.color)})`}
+            />
+          );
+        })()}
+      </svg>
     </div>
   );
 }
