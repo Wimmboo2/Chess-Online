@@ -57,7 +57,7 @@ export default function ComputerGame() {
     }
 
     playMoveSound();
-  }, [handleEngineMove]);
+  }, []);
 
   // Initialize engine via Web Worker
   useEffect(() => {
