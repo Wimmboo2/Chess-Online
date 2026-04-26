@@ -54,6 +54,8 @@ function createRoomState(timeControl) {
     gameOver: false,
     rematchRequests: new Set(),
     lastTickTime: null,
+    drawOfferCooldowns: { w: 0, b: 0 },
+    pendingDrawOffer: null,
   };
 }
 
@@ -90,6 +92,7 @@ function startTimer(room, roomId) {
     if (room.timers[room.activeColor] <= 0) {
       room.timers[room.activeColor] = 0;
       room.gameOver = true;
+      room.pendingDrawOffer = null;
       stopTimer(room);
 
       const winner = room.activeColor === "w" ? "b" : "w";
@@ -116,6 +119,7 @@ function checkGameEnd(room, roomId) {
 
   if (chess.isCheckmate()) {
     room.gameOver = true;
+    room.pendingDrawOffer = null;
     stopTimer(room);
     const winner = chess.turn() === "w" ? "b" : "w";
     io.to(roomId).emit("gameOver", { winner, reason: "checkmate" });
@@ -124,6 +128,7 @@ function checkGameEnd(room, roomId) {
 
   if (chess.isStalemate()) {
     room.gameOver = true;
+    room.pendingDrawOffer = null;
     stopTimer(room);
     io.to(roomId).emit("gameOver", { winner: null, reason: "stalemate" });
     return true;
@@ -131,6 +136,7 @@ function checkGameEnd(room, roomId) {
 
   if (chess.isThreefoldRepetition()) {
     room.gameOver = true;
+    room.pendingDrawOffer = null;
     stopTimer(room);
     io.to(roomId).emit("gameOver", {
       winner: null,
@@ -141,6 +147,7 @@ function checkGameEnd(room, roomId) {
 
   if (chess.isInsufficientMaterial()) {
     room.gameOver = true;
+    room.pendingDrawOffer = null;
     stopTimer(room);
     io.to(roomId).emit("gameOver", {
       winner: null,
@@ -152,6 +159,7 @@ function checkGameEnd(room, roomId) {
   if (chess.isDraw()) {
     // If not stalemate, repetition, or insufficient material, it must be the 50-move rule
     room.gameOver = true;
+    room.pendingDrawOffer = null;
     stopTimer(room);
     io.to(roomId).emit("gameOver", { winner: null, reason: "50-move rule" });
     return true;
@@ -247,6 +255,8 @@ io.on("connection", (socket) => {
 
     // Record move
     room.moves.push(move.san);
+    room.drawOfferCooldowns.w = Math.max(0, room.drawOfferCooldowns.w - 1);
+    room.drawOfferCooldowns.b = Math.max(0, room.drawOfferCooldowns.b - 1);
 
     // Switch active timer
     room.activeColor = room.chess.turn();
@@ -282,6 +292,7 @@ io.on("connection", (socket) => {
     if (!playerColor) return;
 
     room.gameOver = true;
+    room.pendingDrawOffer = null;
     stopTimer(room);
 
     const winner = playerColor === "w" ? "b" : "w";
@@ -296,8 +307,20 @@ io.on("connection", (socket) => {
 
     if (!room || room.gameOver) return;
 
+    const playerColor = getPlayerColor(room, socket.id);
+    if (!playerColor) return;
+
+    if (room.pendingDrawOffer) return;
+
+    const remainingMoves = room.drawOfferCooldowns[playerColor];
+    if (remainingMoves > 0) {
+      socket.emit("drawOfferBlocked", { remainingMoves });
+      return;
+    }
+
     const opponentId = getOpponentSocket(room, socket.id);
     if (opponentId) {
+      room.pendingDrawOffer = playerColor;
       io.to(opponentId).emit("drawOffered");
     }
   });
@@ -311,10 +334,15 @@ io.on("connection", (socket) => {
 
     if (accept) {
       room.gameOver = true;
+      room.pendingDrawOffer = null;
       stopTimer(room);
       io.to(code).emit("gameOver", { winner: null, reason: "draw agreement" });
       console.log(`Room ${code} — Draw agreed`);
     } else {
+      if (room.pendingDrawOffer) {
+        room.drawOfferCooldowns[room.pendingDrawOffer] = 10;
+      }
+      room.pendingDrawOffer = null;
       const opponentId = getOpponentSocket(room, socket.id);
       if (opponentId) {
         io.to(opponentId).emit("drawDeclined");
@@ -340,6 +368,8 @@ io.on("connection", (socket) => {
       room.activeColor = "w";
       room.gameOver = false;
       room.rematchRequests.clear();
+      room.drawOfferCooldowns = { w: 0, b: 0 };
+      room.pendingDrawOffer = null;
 
       // Swap colors
       room.players.forEach((p) => {
@@ -382,6 +412,7 @@ io.on("connection", (socket) => {
       if (!room.gameOver && room.players.length === 2 && playerColor) {
         // Game was in progress — opponent wins
         room.gameOver = true;
+        room.pendingDrawOffer = null;
         stopTimer(room);
 
         const winner = playerColor === "w" ? "b" : "w";

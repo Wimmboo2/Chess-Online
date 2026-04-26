@@ -26,16 +26,13 @@ export default function Game() {
   const { roomId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-
-  // Check if we arrived with game data from the join flow
   const navState = location.state || {};
 
-  // Game state
   const [game, setGame] = useState(() => {
     if (navState.fen) {
-      const g = new Chess();
-      g.load(navState.fen);
-      return g;
+      const initialGame = new Chess();
+      initialGame.load(navState.fen);
+      return initialGame;
     }
     return new Chess();
   });
@@ -43,8 +40,8 @@ export default function Game() {
   const [gameStarted, setGameStarted] = useState(!!navState.joined);
   const [moves, setMoves] = useState([]);
   const [timers, setTimers] = useState(() => {
-    const tc = navState.timeControl || 600000;
-    return { w: tc, b: tc };
+    const timeControl = navState.timeControl || 600000;
+    return { w: timeControl, b: timeControl };
   });
   const [gameOver, setGameOver] = useState(null);
   const [lastMove, setLastMove] = useState(null);
@@ -54,12 +51,26 @@ export default function Game() {
   const [opponentDisconnected, setOpponentDisconnected] = useState(false);
   const [drawOfferPending, setDrawOfferPending] = useState(false);
   const [incomingDrawOffer, setIncomingDrawOffer] = useState(false);
-  const [drawDeclinedMsg, setDrawDeclinedMsg] = useState(false);
+  const [drawNotice, setDrawNotice] = useState('');
 
   const gameRef = useRef(game);
-  gameRef.current = game;
   const playerColorRef = useRef(playerColor);
+  const drawNoticeTimeoutRef = useRef(null);
+
+  gameRef.current = game;
   playerColorRef.current = playerColor;
+
+  const showDrawNotice = useCallback((message) => {
+    if (drawNoticeTimeoutRef.current) {
+      clearTimeout(drawNoticeTimeoutRef.current);
+    }
+
+    setDrawNotice(message);
+    drawNoticeTimeoutRef.current = setTimeout(() => {
+      setDrawNotice('');
+      drawNoticeTimeoutRef.current = null;
+    }, 3000);
+  }, []);
 
   const playMoveEventSound = useCallback((soundType) => {
     if (soundType === 'check') {
@@ -82,32 +93,36 @@ export default function Game() {
 
   const materialState = useMemo(() => getMaterialState(game), [game]);
 
-  // ── Socket event handlers ──
   useEffect(() => {
     const handleGameStart = ({ color, fen, timeControl }) => {
-      const newGame = new Chess();
-      if (fen) newGame.load(fen);
-      setGame(newGame);
+      const nextGame = new Chess();
+      if (fen) nextGame.load(fen);
+
+      setGame(nextGame);
       setPlayerColor(color);
       setGameStarted(true);
       setMoves([]);
-      const tc = timeControl || 600000;
-      setTimers({ w: tc, b: tc });
+      setTimers({ w: timeControl || 600000, b: timeControl || 600000 });
       setGameOver(null);
       setLastMove(null);
       setRematchRequested(false);
       setRematchPending(false);
       setDrawOfferPending(false);
       setIncomingDrawOffer(false);
-      setDrawDeclinedMsg(false);
+      setDrawNotice('');
+      if (drawNoticeTimeoutRef.current) {
+        clearTimeout(drawNoticeTimeoutRef.current);
+        drawNoticeTimeoutRef.current = null;
+      }
       playGameStartSound();
     };
 
     const handleMoveMade = ({ from, to, fen, moves: allMoves }) => {
       const moveEvent = analyzeMoveEvent(gameRef.current, from, to, 'q');
-      const newGame = new Chess();
-      newGame.load(fen);
-      setGame(newGame);
+      const nextGame = new Chess();
+      nextGame.load(fen);
+
+      setGame(nextGame);
       setMoves(allMoves);
       setLastMove({ from, to });
       playMoveEventSound(getMoveSoundType(moveEvent));
@@ -141,8 +156,14 @@ export default function Game() {
 
     const handleDrawDeclined = () => {
       setDrawOfferPending(false);
-      setDrawDeclinedMsg(true);
-      setTimeout(() => setDrawDeclinedMsg(false), 3000);
+      showDrawNotice('Draw offer declined.');
+    };
+
+    const handleDrawOfferBlocked = ({ remainingMoves }) => {
+      setDrawOfferPending(false);
+      showDrawNotice(
+        `You can offer a draw again in ${remainingMoves} move${remainingMoves === 1 ? '' : 's'}.`
+      );
     };
 
     const handleError = ({ message }) => {
@@ -158,6 +179,7 @@ export default function Game() {
     socket.on('opponentDisconnected', handleOpponentDisconnected);
     socket.on('drawOffered', handleDrawOffered);
     socket.on('drawDeclined', handleDrawDeclined);
+    socket.on('drawOfferBlocked', handleDrawOfferBlocked);
     socket.on('error', handleError);
 
     return () => {
@@ -170,11 +192,19 @@ export default function Game() {
       socket.off('opponentDisconnected', handleOpponentDisconnected);
       socket.off('drawOffered', handleDrawOffered);
       socket.off('drawDeclined', handleDrawDeclined);
+      socket.off('drawOfferBlocked', handleDrawOfferBlocked);
       socket.off('error', handleError);
+    };
+  }, [playMoveEventSound, showDrawNotice]);
+
+  useEffect(() => {
+    return () => {
+      if (drawNoticeTimeoutRef.current) {
+        clearTimeout(drawNoticeTimeoutRef.current);
+      }
     };
   }, []);
 
-  // ── Move handler ──
   const onMove = useCallback(
     (from, to) => {
       if (gameOver) return false;
@@ -199,47 +229,48 @@ export default function Game() {
 
       return true;
     },
-    [game, playerColor, roomId, gameOver]
+    [game, gameOver, playerColor, roomId]
   );
 
-  // ── Resign handler ──
   const onResign = useCallback(() => {
     socket.emit('resign', { roomId });
   }, [roomId]);
 
-  // ── Draw Offer handler ──
   const onOfferDraw = useCallback(() => {
     socket.emit('offerDraw', { roomId });
     setDrawOfferPending(true);
   }, [roomId]);
 
-  const onRespondDraw = useCallback((accept) => {
-    socket.emit('respondDraw', { roomId, accept });
-    setIncomingDrawOffer(false);
-  }, [roomId]);
+  const onRespondDraw = useCallback(
+    (accept) => {
+      socket.emit('respondDraw', { roomId, accept });
+      setIncomingDrawOffer(false);
+      if (!accept) {
+        showDrawNotice('Draw offer declined.');
+      }
+    },
+    [roomId, showDrawNotice]
+  );
 
-  // ── Rematch handler ──
   const onRematch = useCallback(() => {
     socket.emit('rematchRequest', { roomId });
     setRematchRequested(true);
   }, [roomId]);
 
-  // ── Go home ──
   const onGoHome = useCallback(() => {
     navigate('/');
   }, [navigate]);
 
   const onReviewGame = useCallback(() => {
-    navigate('/review', { 
-      state: { 
-        moves, 
-        playerColor, 
-        opponentName: 'Opponent'
-      } 
+    navigate('/review', {
+      state: {
+        moves,
+        playerColor,
+        opponentName: 'Opponent',
+      },
     });
-  }, [navigate, moves, playerColor]);
+  }, [moves, navigate, playerColor]);
 
-  // ── Copy room code ──
   const copyRoomCode = () => {
     navigator.clipboard.writeText(roomId).then(() => {
       setCopied(true);
@@ -247,15 +278,13 @@ export default function Game() {
     });
   };
 
-  // ── Determine opponent color ──
   const opponentColor = playerColor === 'w' ? 'b' : 'w';
 
-  // ── Waiting for opponent ──
   if (!gameStarted) {
     return (
       <div className="waiting-container">
         <div className="waiting-card">
-          <span className="home-icon">⏳</span>
+          <span className="home-icon">...</span>
           <h2 className="waiting-title">Waiting for Opponent</h2>
           <p className="waiting-subtitle">
             Share this room code with a friend to start playing
@@ -284,11 +313,9 @@ export default function Game() {
     );
   }
 
-  // ── Main game view ──
   return (
     <div className="game-container">
       <div className="game-board-section">
-        {/* Opponent clock (top) */}
         <Clock
           time={timers[opponentColor]}
           color={opponentColor}
@@ -298,7 +325,6 @@ export default function Game() {
           materialAdvantage={materialState[opponentColor]?.materialAdvantage}
         />
 
-        {/* Chess board */}
         <ChessBoardComponent
           game={game}
           playerColor={playerColor}
@@ -307,7 +333,6 @@ export default function Game() {
           gameOver={!!gameOver}
         />
 
-        {/* Player clock (bottom) */}
         <Clock
           time={timers[playerColor]}
           color={playerColor}
@@ -327,40 +352,83 @@ export default function Game() {
             onClick={onOfferDraw}
             disabled={!!gameOver || drawOfferPending || incomingDrawOffer}
           >
-            {drawOfferPending ? 'Draw Offered...' : '🤝 Offer Draw'}
+            {drawOfferPending ? 'Draw Offered...' : 'Offer Draw'}
           </button>
           <ResignButton onResign={onResign} disabled={!!gameOver} />
         </div>
       </div>
 
-      {/* Draw Offer Modal */}
       {incomingDrawOffer && !gameOver && (
-        <div className="gameover-overlay">
-          <div className="gameover-modal">
-            <span className="gameover-icon">🤝</span>
-            <h2 className="gameover-title">Draw Offer</h2>
-            <p className="gameover-reason">
-              {opponentColor === 'w' ? 'White' : 'Black'} is offering a draw.
-            </p>
-            <div className="gameover-actions">
-              <button
-                className="btn-primary"
-                onClick={() => onRespondDraw(true)}
-              >
-                Accept Draw
-              </button>
-              <button
-                className="btn-secondary"
-                onClick={() => onRespondDraw(false)}
-              >
-                Decline
-              </button>
-            </div>
+        <div
+          style={{
+            position: 'fixed',
+            top: '20px',
+            right: '20px',
+            width: 'min(300px, calc(100vw - 32px))',
+            padding: '14px',
+            background: 'rgba(18, 18, 26, 0.96)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            borderRadius: '12px',
+            boxShadow: '0 18px 40px rgba(0, 0, 0, 0.35)',
+            zIndex: 120,
+            backdropFilter: 'blur(14px)',
+          }}
+        >
+          <div style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: '6px' }}>
+            Draw Offer
+          </div>
+          <p
+            style={{
+              color: 'var(--text-secondary)',
+              fontSize: '0.85rem',
+              lineHeight: 1.45,
+              marginBottom: '12px',
+            }}
+          >
+            {opponentColor === 'w' ? 'White' : 'Black'} is offering a draw.
+          </p>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              className="btn-primary btn-small"
+              style={{ padding: '8px 12px', fontSize: '0.8rem' }}
+              onClick={() => onRespondDraw(true)}
+            >
+              Accept
+            </button>
+            <button
+              className="btn-secondary btn-small"
+              style={{ padding: '8px 12px', fontSize: '0.8rem' }}
+              onClick={() => onRespondDraw(false)}
+            >
+              Decline
+            </button>
           </div>
         </div>
       )}
 
-      {/* Game Over Modal */}
+      {drawNotice && (
+        <div
+          style={{
+            position: 'fixed',
+            top: incomingDrawOffer && !gameOver ? '146px' : '20px',
+            right: '20px',
+            width: 'min(300px, calc(100vw - 32px))',
+            padding: '12px 14px',
+            background: 'rgba(10, 10, 15, 0.96)',
+            border: '1px solid rgba(212, 168, 67, 0.28)',
+            color: 'var(--text-primary)',
+            borderRadius: '12px',
+            boxShadow: '0 18px 40px rgba(0, 0, 0, 0.35)',
+            zIndex: 119,
+            backdropFilter: 'blur(14px)',
+            fontSize: '0.84rem',
+            lineHeight: 1.45,
+          }}
+        >
+          {drawNotice}
+        </div>
+      )}
+
       {gameOver && (
         <GameOverModal
           gameOver={gameOver}
@@ -375,7 +443,6 @@ export default function Game() {
       )}
 
       {copied && <div className="copy-toast">Room code copied!</div>}
-      {drawDeclinedMsg && <div className="copy-toast">Draw offer declined.</div>}
     </div>
   );
 }
