@@ -123,6 +123,28 @@ export default function ChessBoardComponent({ game, playerColor, onMove, lastMov
     return false;
   };
 
+  const onPieceDragBegin = (_piece, sourceSquare) => {
+    if (gameOver) return;
+
+    const sourcePiece = game.get(sourceSquare);
+    if (!sourcePiece) return;
+
+    if (game.turn() !== playerColor && playerColor) {
+      setSelectedSquare(sourceSquare);
+      setOptionSquares({});
+      return;
+    }
+
+    if (sourcePiece.color === game.turn() && sourcePiece.color === playerColor) {
+      selectPiece(sourceSquare);
+    }
+  };
+
+  const onPieceDragEnd = () => {
+    setSelectedSquare(null);
+    setOptionSquares({});
+  };
+
   // ── Combined Styles ──
   const customSquareStyles = useMemo(() => {
     const styles = {};
@@ -177,6 +199,8 @@ export default function ChessBoardComponent({ game, playerColor, onMove, lastMov
         id="game-board"
         position={game.fen()}
         onPieceDrop={onDrop}
+        onPieceDragBegin={onPieceDragBegin}
+        onPieceDragEnd={onPieceDragEnd}
         onSquareClick={onSquareClick}
         boardOrientation={boardOrientation}
         arePiecesDraggable={isDraggable}
