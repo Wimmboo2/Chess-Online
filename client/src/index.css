@@ -561,14 +561,38 @@ input {
 
 .clock-container {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
   padding: 14px 20px;
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   width: 100%;
   transition: all var(--transition-normal);
+}
+
+.clock-main-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.clock-player-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1;
+}
+
+.clock-main-right {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-width: 0;
 }
 
 .clock-container.active {
@@ -607,10 +631,10 @@ input {
 }
 
 .clock-player-name {
-  flex: 1;
   font-size: 0.95rem;
   font-weight: 600;
   color: var(--text-secondary);
+  min-width: 0;
 }
 
 .clock-time {
@@ -624,6 +648,55 @@ input {
 
 .clock-container.low-time .clock-time {
   color: var(--accent-red);
+}
+
+.clock-side-content {
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+}
+
+.clock-capture-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 20px;
+}
+
+.clock-captured-pieces {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  min-width: 0;
+}
+
+.captured-piece {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  line-height: 1;
+  user-select: none;
+}
+
+.captured-piece-white {
+  color: #f6f1e7;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.captured-piece-black {
+  color: #404040;
+  text-shadow: 0 1px 1px rgba(255, 255, 255, 0.08);
+}
+
+.clock-material-advantage {
+  color: var(--accent-gold-light);
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 /* ── Move History ── */

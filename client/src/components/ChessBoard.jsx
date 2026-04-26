@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import { Chess } from 'chess.js';
 import { Chessboard } from 'react-chessboard';
+import { playPremoveSound } from '../utils/sounds.js';
 
 export default function ChessBoardComponent({ game, playerColor, onMove, lastMove, gameOver }) {
   const boardOrientation = playerColor === 'b' ? 'black' : 'white';
@@ -58,6 +59,7 @@ export default function ChessBoardComponent({ game, playerColor, onMove, lastMov
       if (selectedSquare) {
         if (selectedSquare !== square) {
           setPremove({ from: selectedSquare, to: square });
+          playPremoveSound();
         }
         setSelectedSquare(null);
         setOptionSquares({});
@@ -111,6 +113,7 @@ export default function ChessBoardComponent({ game, playerColor, onMove, lastMov
       const piece = game.get(sourceSquare);
       if (piece && piece.color === playerColor) {
         setPremove({ from: sourceSquare, to: targetSquare });
+        playPremoveSound();
         setSelectedSquare(null);
         setOptionSquares({});
       }
@@ -190,4 +193,3 @@ export default function ChessBoardComponent({ game, playerColor, onMove, lastMov
     </div>
   );
 }
-

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Chess } from 'chess.js';
 import ChessBoardComponent from '../components/ChessBoard.jsx';
@@ -6,7 +6,15 @@ import Clock from '../components/Clock.jsx';
 import MoveHistory from '../components/MoveHistory.jsx';
 import GameOverModal from '../components/GameOverModal.jsx';
 import ResignButton from '../components/ResignButton.jsx';
-import { playMoveSound, playCaptureSound, playCheckSound, playGameOverSound, playDrawSound } from '../utils/sounds.js';
+import {
+  playMoveSound,
+  playCaptureSound,
+  playCheckSound,
+  playCastleSound,
+  playGameEndSound,
+  playGameStartSound,
+} from '../utils/sounds.js';
+import { getMaterialState, getMoveSoundType, getOutcomeSound } from '../utils/gamePresentation.js';
 
 export default function LocalGame() {
   const navigate = useNavigate();
@@ -23,6 +31,27 @@ export default function LocalGame() {
 
   const lastTickRef = useRef(Date.now());
   const timerIntervalRef = useRef(null);
+
+  const materialState = useMemo(() => getMaterialState(game), [game]);
+
+  const playMoveEventSound = useCallback((soundType) => {
+    if (soundType === 'check') {
+      playCheckSound();
+      return;
+    }
+
+    if (soundType === 'castle') {
+      playCastleSound();
+      return;
+    }
+
+    if (soundType === 'capture') {
+      playCaptureSound();
+      return;
+    }
+
+    playMoveSound();
+  }, []);
 
   // Auto-draw checks
   const checkGameEnd = useCallback((currentGame, currentActiveColor) => {
@@ -48,6 +77,10 @@ export default function LocalGame() {
 
   // Timer logic
   useEffect(() => {
+    playGameStartSound();
+  }, []);
+
+  useEffect(() => {
     if (gameOver) {
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
       return;
@@ -69,7 +102,7 @@ export default function LocalGame() {
             winner: activeColor === 'w' ? 'b' : 'w',
             reason: 'timeout',
           });
-          playGameOverSound();
+          playGameEndSound('win');
           clearInterval(timerIntervalRef.current);
         }
         return newTimers;
@@ -100,13 +133,15 @@ export default function LocalGame() {
       setMoves((prev) => [...prev, move.san]);
       setLastMove({ from, to });
       
-      if (move.san.includes('+') || move.san.includes('#')) {
-        playCheckSound();
-      } else if (move.flags.includes('c') || move.san.includes('x')) {
-        playCaptureSound();
-      } else {
-        playMoveSound();
-      }
+      playMoveEventSound(
+        getMoveSoundType({
+          move,
+          san: move.san,
+          isCheck: move.san.includes('+') || move.san.includes('#'),
+          isCapture: move.flags.includes('c') || move.flags.includes('e') || move.san.includes('x'),
+          isCastle: move.flags.includes('k') || move.flags.includes('q'),
+        })
+      );
       
       const newActiveColor = gameCopy.turn();
       setActiveColor(newActiveColor);
@@ -115,16 +150,12 @@ export default function LocalGame() {
       const endState = checkGameEnd(gameCopy, activeColor);
       if (endState) {
         setGameOver(endState);
-        if (endState.reason.includes('draw') || endState.reason.includes('stalemate') || endState.reason.includes('repetition') || endState.reason.includes('material') || endState.reason.includes('rule')) {
-          playDrawSound();
-        } else {
-          playGameOverSound();
-        }
+        playGameEndSound(getOutcomeSound(endState));
       }
 
       return true;
     },
-    [game, activeColor, gameOver, checkGameEnd]
+    [game, activeColor, gameOver, checkGameEnd, playMoveEventSound]
   );
 
   const onResign = useCallback(() => {
@@ -132,7 +163,7 @@ export default function LocalGame() {
       winner: activeColor === 'w' ? 'b' : 'w',
       reason: 'resignation',
     });
-    playGameOverSound();
+    playGameEndSound('win');
   }, [activeColor]);
 
   const onRematch = useCallback(() => {
@@ -143,6 +174,7 @@ export default function LocalGame() {
     setLastMove(null);
     setActiveColor('w');
     lastTickRef.current = Date.now();
+    playGameStartSound();
   }, [timeControl]);
 
   const onGoHome = useCallback(() => {
@@ -171,6 +203,8 @@ export default function LocalGame() {
           color={opponentColor}
           isActive={!gameOver && false} // opponent is never active in local view
           label={opponentColor === 'w' ? 'White' : 'Black'}
+          capturedPieces={materialState[opponentColor]?.capturedPieces}
+          materialAdvantage={materialState[opponentColor]?.materialAdvantage}
         />
 
         {/* Chess board */}
@@ -188,6 +222,8 @@ export default function LocalGame() {
           color={activeColor}
           isActive={!gameOver}
           label={activeColor === 'w' ? 'White (To Move)' : 'Black (To Move)'}
+          capturedPieces={materialState[activeColor]?.capturedPieces}
+          materialAdvantage={materialState[activeColor]?.materialAdvantage}
         />
       </div>
 

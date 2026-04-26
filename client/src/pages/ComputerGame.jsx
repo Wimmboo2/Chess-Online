@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Chess } from 'chess.js';
 import ChessBoardComponent from '../components/ChessBoard.jsx';
@@ -6,7 +6,15 @@ import Clock from '../components/Clock.jsx';
 import MoveHistory from '../components/MoveHistory.jsx';
 import GameOverModal from '../components/GameOverModal.jsx';
 import ResignButton from '../components/ResignButton.jsx';
-import { playMoveSound, playCaptureSound, playCheckSound, playGameOverSound, playDrawSound, playGameStartSound } from '../utils/sounds.js';
+import {
+  playMoveSound,
+  playCaptureSound,
+  playCheckSound,
+  playCastleSound,
+  playGameEndSound,
+  playGameStartSound,
+} from '../utils/sounds.js';
+import { getMaterialState, getMoveSoundType, getOutcomeSound } from '../utils/gamePresentation.js';
 
 const STOCKFISH_URL = 'https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.2/stockfish.js';
 
@@ -29,6 +37,27 @@ export default function ComputerGame() {
   const engineRef = useRef(null);
   const lastTickRef = useRef(Date.now());
   const timerIntervalRef = useRef(null);
+
+  const materialState = useMemo(() => getMaterialState(game), [game]);
+
+  const playMoveEventSound = useCallback((soundType) => {
+    if (soundType === 'check') {
+      playCheckSound();
+      return;
+    }
+
+    if (soundType === 'castle') {
+      playCastleSound();
+      return;
+    }
+
+    if (soundType === 'capture') {
+      playCaptureSound();
+      return;
+    }
+
+    playMoveSound();
+  }, [handleEngineMove]);
 
   // Initialize engine via Web Worker
   useEffect(() => {
@@ -60,7 +89,7 @@ export default function ComputerGame() {
       worker.terminate();
       URL.revokeObjectURL(url);
     };
-  }, []);
+  }, [playMoveEventSound, playerColor]);
 
   const getDepth = () => {
     if (difficulty === 'easy') return 2;
@@ -88,18 +117,20 @@ export default function ComputerGame() {
         setMoves((prev) => [...prev, moveResult.san]);
         setLastMove({ from, to });
         
-        if (moveResult.san.includes('+') || moveResult.san.includes('#')) {
-          playCheckSound();
-        } else if (moveResult.flags.includes('c') || moveResult.san.includes('x')) {
-          playCaptureSound();
-        } else {
-          playMoveSound();
-        }
+        playMoveEventSound(
+          getMoveSoundType({
+            move: moveResult,
+            san: moveResult.san,
+            isCheck: moveResult.san.includes('+') || moveResult.san.includes('#'),
+            isCapture: moveResult.flags.includes('c') || moveResult.flags.includes('e') || moveResult.san.includes('x'),
+            isCastle: moveResult.flags.includes('k') || moveResult.flags.includes('q'),
+          })
+        );
 
         const endState = checkGameEnd(gameCopy);
         if (endState) {
           setGameOver(endState);
-          handleGameEndSound(endState);
+          playGameEndSound(getOutcomeSound(endState, playerColor));
         }
       }
       
@@ -144,7 +175,7 @@ export default function ComputerGame() {
             winner: activeColor === 'w' ? 'b' : 'w',
             reason: 'timeout',
           });
-          playGameOverSound();
+          playGameEndSound(getOutcomeSound({ winner: activeColor === 'w' ? 'b' : 'w', reason: 'timeout' }, playerColor));
           clearInterval(timerIntervalRef.current);
         }
         return newTimers;
@@ -154,7 +185,7 @@ export default function ComputerGame() {
     return () => {
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
     };
-  }, [game, gameOver]);
+  }, [game, gameOver, playerColor]);
 
   const checkGameEnd = (currentGame) => {
     if (currentGame.isCheckmate()) {
@@ -176,14 +207,6 @@ export default function ComputerGame() {
     return null;
   };
 
-  const handleGameEndSound = (endState) => {
-    if (endState.reason.includes('draw') || endState.reason.includes('stalemate') || endState.reason.includes('repetition') || endState.reason.includes('material') || endState.reason.includes('rule')) {
-      playDrawSound();
-    } else {
-      playGameOverSound();
-    }
-  };
-
   const onMove = useCallback(
     (from, to) => {
       if (gameOver || game.turn() !== playerColor) return false;
@@ -202,25 +225,27 @@ export default function ComputerGame() {
       setMoves((prev) => [...prev, move.san]);
       setLastMove({ from, to });
       
-      if (move.san.includes('+') || move.san.includes('#')) {
-        playCheckSound();
-      } else if (move.flags.includes('c') || move.san.includes('x')) {
-        playCaptureSound();
-      } else {
-        playMoveSound();
-      }
+      playMoveEventSound(
+        getMoveSoundType({
+          move,
+          san: move.san,
+          isCheck: move.san.includes('+') || move.san.includes('#'),
+          isCapture: move.flags.includes('c') || move.flags.includes('e') || move.san.includes('x'),
+          isCastle: move.flags.includes('k') || move.flags.includes('q'),
+        })
+      );
       
       lastTickRef.current = Date.now();
 
       const endState = checkGameEnd(gameCopy);
       if (endState) {
         setGameOver(endState);
-        handleGameEndSound(endState);
+        playGameEndSound(getOutcomeSound(endState, playerColor));
       }
 
       return true;
     },
-    [game, playerColor, gameOver]
+    [game, playerColor, gameOver, playMoveEventSound]
   );
 
   const onResign = useCallback(() => {
@@ -228,7 +253,7 @@ export default function ComputerGame() {
       winner: playerColor === 'w' ? 'b' : 'w',
       reason: 'resignation',
     });
-    playGameOverSound();
+    playGameEndSound('loss');
   }, [playerColor]);
 
   const onRematch = useCallback(() => {
@@ -268,12 +293,16 @@ export default function ComputerGame() {
             color={opponentColor}
             isActive={!gameOver && game.turn() === opponentColor}
             label={`Stockfish (${difficulty})`}
+            capturedPieces={materialState[opponentColor]?.capturedPieces}
+            materialAdvantage={materialState[opponentColor]?.materialAdvantage}
+            sideContent={
+              isBotThinking ? (
+                <span style={{ color: 'var(--text-secondary)', fontStyle: 'italic', fontSize: '0.82rem' }}>
+                  Thinking...
+                </span>
+              ) : null
+            }
           />
-          {isBotThinking && (
-            <div style={{ color: 'var(--text-secondary)', fontStyle: 'italic', fontSize: '0.9rem' }}>
-              Thinking...
-            </div>
-          )}
         </div>
 
         {/* Chess board */}
@@ -291,6 +320,8 @@ export default function ComputerGame() {
           color={playerColor}
           isActive={!gameOver && game.turn() === playerColor}
           label={playerColor === 'w' ? 'White (You)' : 'Black (You)'}
+          capturedPieces={materialState[playerColor]?.capturedPieces}
+          materialAdvantage={materialState[playerColor]?.materialAdvantage}
         />
       </div>
 

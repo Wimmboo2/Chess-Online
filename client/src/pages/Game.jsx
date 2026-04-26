@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { Chess } from 'chess.js';
 import socket from '../socket.js';
@@ -7,7 +7,20 @@ import Clock from '../components/Clock.jsx';
 import MoveHistory from '../components/MoveHistory.jsx';
 import GameOverModal from '../components/GameOverModal.jsx';
 import ResignButton from '../components/ResignButton.jsx';
-import { playMoveSound, playCaptureSound, playCheckSound, playGameStartSound, playGameOverSound, playDrawSound } from '../utils/sounds.js';
+import {
+  playMoveSound,
+  playCaptureSound,
+  playCheckSound,
+  playGameStartSound,
+  playCastleSound,
+  playGameEndSound,
+} from '../utils/sounds.js';
+import {
+  analyzeMoveEvent,
+  getMaterialState,
+  getMoveSoundType,
+  getOutcomeSound,
+} from '../utils/gamePresentation.js';
 
 export default function Game() {
   const { roomId } = useParams();
@@ -45,6 +58,29 @@ export default function Game() {
 
   const gameRef = useRef(game);
   gameRef.current = game;
+  const playerColorRef = useRef(playerColor);
+  playerColorRef.current = playerColor;
+
+  const playMoveEventSound = useCallback((soundType) => {
+    if (soundType === 'check') {
+      playCheckSound();
+      return;
+    }
+
+    if (soundType === 'castle') {
+      playCastleSound();
+      return;
+    }
+
+    if (soundType === 'capture') {
+      playCaptureSound();
+      return;
+    }
+
+    playMoveSound();
+  }, []);
+
+  const materialState = useMemo(() => getMaterialState(game), [game]);
 
   // ── Socket event handlers ──
   useEffect(() => {
@@ -68,22 +104,13 @@ export default function Game() {
     };
 
     const handleMoveMade = ({ from, to, fen, moves: allMoves }) => {
+      const moveEvent = analyzeMoveEvent(gameRef.current, from, to, 'q');
       const newGame = new Chess();
       newGame.load(fen);
       setGame(newGame);
       setMoves(allMoves);
       setLastMove({ from, to });
-
-      const lastSan = allMoves[allMoves.length - 1];
-      if (lastSan) {
-        if (lastSan.includes('+') || lastSan.includes('#')) {
-          playCheckSound();
-        } else if (lastSan.includes('x')) {
-          playCaptureSound();
-        } else {
-          playMoveSound();
-        }
-      }
+      playMoveEventSound(getMoveSoundType(moveEvent));
     };
 
     const handleTimerUpdate = ({ w, b }) => {
@@ -91,12 +118,9 @@ export default function Game() {
     };
 
     const handleGameOver = ({ winner, reason }) => {
-      setGameOver({ winner, reason });
-      if (reason.includes('draw') || reason.includes('stalemate') || reason.includes('repetition') || reason.includes('material') || reason.includes('rule')) {
-        playDrawSound();
-      } else {
-        playGameOverSound();
-      }
+      const nextGameOver = { winner, reason };
+      setGameOver(nextGameOver);
+      playGameEndSound(getOutcomeSound(nextGameOver, playerColorRef.current));
     };
 
     const handleRematchPending = () => {
@@ -270,6 +294,8 @@ export default function Game() {
           color={opponentColor}
           isActive={!gameOver && game.turn() === opponentColor}
           label={opponentColor === 'w' ? 'White' : 'Black'}
+          capturedPieces={materialState[opponentColor]?.capturedPieces}
+          materialAdvantage={materialState[opponentColor]?.materialAdvantage}
         />
 
         {/* Chess board */}
@@ -287,6 +313,8 @@ export default function Game() {
           color={playerColor}
           isActive={!gameOver && game.turn() === playerColor}
           label={playerColor === 'w' ? 'White (You)' : 'Black (You)'}
+          capturedPieces={materialState[playerColor]?.capturedPieces}
+          materialAdvantage={materialState[playerColor]?.materialAdvantage}
         />
       </div>
 
